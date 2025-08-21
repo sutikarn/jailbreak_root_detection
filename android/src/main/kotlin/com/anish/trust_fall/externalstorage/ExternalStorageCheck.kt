@@ -14,31 +14,45 @@ object ExternalStorageCheck {
      */
     @SuppressLint("ObsoleteSdkInt", "SdCardPath")
     fun isOnExternalStorage(context: Context?): Boolean {
-        if (context == null) return false
+        // context อาจเป็น null
+        val ctx = context ?: return false
 
-        // check for API level 8 and higher
+        // API 8+ : เช็กจาก ApplicationInfo.flags (ทำแบบปลอดภัยต่อ null)
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.ECLAIR_MR1) {
-            val pm = context.packageManager
-            try {
-                val pi = pm.getPackageInfo(context.packageName, 0)
-                val ai = pi.applicationInfo
-                return ai.flags and ApplicationInfo.FLAG_EXTERNAL_STORAGE == ApplicationInfo.FLAG_EXTERNAL_STORAGE
-            } catch (e: PackageManager.NameNotFoundException) {
-                // ignore
+            val pm = ctx.packageManager
+            val pi = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getPackageInfo(
+                        ctx.packageName,
+                        PackageManager.PackageInfoFlags.of(0)
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(ctx.packageName, 0)
+                }
+            } catch (_: PackageManager.NameNotFoundException) {
+                null
+            } catch (_: Throwable) {
+                null
             }
-        }
 
-        // check for API level 7 - check files dir
-        try {
-            val filesDir = context.filesDir.absolutePath
-            if (filesDir.startsWith("/data/")) {
-                return false
-            } else if (filesDir.contains("/mnt/") || filesDir.contains("/sdcard/")) {
+            val ai: ApplicationInfo? = pi?.applicationInfo
+            val flags = ai?.flags ?: 0
+            if ((flags and ApplicationInfo.FLAG_EXTERNAL_STORAGE) == ApplicationInfo.FLAG_EXTERNAL_STORAGE) {
                 return true
             }
-        } catch (e: Throwable) {
-            // ignore
         }
-        return false
+
+        // fallback : เช็กจาก path ของ filesDir (กัน null และ exception)
+        return try {
+            val filesDirPath = ctx.filesDir?.absolutePath ?: return false
+            when {
+                filesDirPath.startsWith("/data/") -> false
+                filesDirPath.contains("/mnt/") || filesDirPath.contains("/sdcard/") -> true
+                else -> false
+            }
+        } catch (_: Throwable) {
+            false
+        }
     }
 }
